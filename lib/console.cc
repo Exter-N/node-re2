@@ -1,3 +1,4 @@
+#include "./functional.h"
 #include "./util.h"
 
 #include <string>
@@ -14,31 +15,22 @@ using v8::Value;
 using std::string;
 
 
-template<typename R, typename P, typename L>
-inline MaybeLocal<R> bind(MaybeLocal<P> param, L lambda) {
-	if (param.IsEmpty()) return MaybeLocal<R>();
-
-	return lambda(param.ToLocalChecked());
-}
-
-
-void consoleCall(const Local<String>& methodName, Local<Value> text) {
+void consoleCall(const char* methodName, Local<Value> text) {
 	Local<v8::Context> context = v8::Isolate::GetCurrent()->GetCurrentContext();
 
 	MaybeLocal<Object> maybeConsole = bind<Object>(
 		Nan::Get(context->Global(), Nan::New("console").ToLocalChecked()),
-		[context] (Local<Value> console) { return console->ToObject(context); });
+		as<Object>);
 	if (maybeConsole.IsEmpty()) return;
 
 	Local<Object> console = maybeConsole.ToLocalChecked();
 
-	MaybeLocal<Object> maybeMethod = bind<Object>(
-		Nan::Get(console, methodName),
-		[context] (Local<Value> method) { return method->ToObject(context); });
+	MaybeLocal<Function> maybeMethod = bind<Function>(
+		Nan::Get(console, Nan::New(methodName).ToLocalChecked()),
+		as<Function>);
 	if (maybeMethod.IsEmpty()) return;
 
 	Local<Object> method = maybeMethod.ToLocalChecked();
-	if (!method->IsFunction()) return;
 
 	Nan::Call(method.As<Function>(), console, 1, &text);
 }
@@ -52,5 +44,5 @@ void printDeprecationWarning(const char* warning) {
 		"(node:%d) DeprecationWarning: %s",
 		getpid(), warning));
 
-	consoleCall(Nan::New("error").ToLocalChecked(), Nan::New(prefixedWarning).ToLocalChecked());
+	consoleCall("error", Nan::New(prefixedWarning).ToLocalChecked());
 }

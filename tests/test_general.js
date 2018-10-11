@@ -42,13 +42,6 @@ unit.add(module, [
 	},
 	function test_instErrors(t) {
 		try {
-			var re = new RE2([]);
-			t.test(false); // shouldn't be here
-		} catch(e) {
-			eval(t.TEST("e instanceof TypeError"));
-		}
-
-		try {
 			var re = new RE2({});
 			t.test(false); // shouldn't be here
 		} catch(e) {
@@ -258,15 +251,193 @@ unit.add(module, [
 
 		re = new RE2("a", "migyu");
 		eval(t.TEST("re.flags === 'gimuy'"));
+	},
+
+	// RE2-Set tests
+
+	function test_setInst(t) {
+		"use strict";
+
+		var re = new RE2(["\\s+", "\\{", "\\}", "[a-z]+"], "gu");
+		eval(t.TEST("re.source === '\\\\s+|\\\\{|\\\\}|[a-z]+'"));
+		eval(t.TEST("t.unify(re.sources, ['\\\\s+', '\\\\{', '\\\\}', '[a-z]+'])"));
+		eval(t.TEST("re.flags === 'gu'"));
+
+		var re2 = new RE2(re);
+		compare(re, re2, t);
+
+		re = new RE2((function* () {
+			yield "\\s+";
+			yield "[0-9]+";
+		})(), "iuy");
+		eval(t.TEST("re.source === '\\\\s+|[0-9]+'"));
+		eval(t.TEST("t.unify(re.sources, ['\\\\s+', '[0-9]+'])"));
+		eval(t.TEST("re.flags === 'iuy'"));
+
+		re = new RE2(makeLowLevelIterator([
+			{ value: "\\s+", done: false },
+			{ value: "[0-9a-z]+", done: false },
+			{ done: true }
+		]), "mu");
+		eval(t.TEST("re.source === '\\\\s+|[0-9a-z]+'"));
+		eval(t.TEST("t.unify(re.sources, ['\\\\s+', '[0-9a-z]+'])"));
+		eval(t.TEST("re.flags === 'mu'"));
+	},
+	function test_setInstErrors(t) {
+		"use strict";
+
+		// Empty array
+		try {
+			var re = new RE2([]);
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof TypeError"));
+		}
+
+		// Throwing generator
+		try {
+			var re = new RE2((function* () {
+				yield "hello";
+				throw "fail";
+			})());
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e === 'fail'"));
+		}
+
+		// Ill-formed iterable
+		try {
+			var re = new RE2({ [Symbol.iterator]: true });
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof TypeError"));
+		}
+
+		// Iterable throwing when trying to get iterator
+		try {
+			var re = new RE2({ [Symbol.iterator]() { throw "fail"; } });
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e === 'fail'"));
+		}
+
+		// Iterable returning an ill-formed iterator
+		try {
+			var re = new RE2({ [Symbol.iterator]() { return this; } });
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof TypeError"));
+		}
+
+		// Ill-formed iterator
+		try {
+			var re = new RE2({ next: "bad", [Symbol.iterator]() { return this; } });
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof TypeError"));
+		}
+
+		// Throwing iterator
+		try {
+			var re = new RE2(makeLowLevelIterator([ ]));
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e === 'past end'"));
+		}
+
+		// Iterator returning an ill-formed record (no .done)
+		try {
+			var re = new RE2(makeLowLevelIterator([ { } ]));
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof TypeError"));
+		}
+
+		// Iterator returning an ill-formed record (no .done)
+		try {
+			var re = new RE2(makeLowLevelIterator([ { value: 'hello' } ]));
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof TypeError"));
+		}
+
+		// Empty iterator
+		try {
+			var re = new RE2(makeLowLevelIterator([ { done: true } ]));
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof TypeError"));
+		}
+
+		// Iterator containing an undefined value
+		try {
+			var re = new RE2(makeLowLevelIterator([ { done: false } ]));
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof TypeError"));
+		}
+
+		// Another throwing iterator
+		try {
+			var re = new RE2(makeLowLevelIterator([ { value: 'hello', done: false } ]));
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e === 'past end'"));
+		}
+	},
+	function test_setDisallowsAnchor(t) {
+		"use strict";
+		
+		try {
+			var re = new RE2([ '^hello' ]);
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof SyntaxError"));
+		}
+
+		try {
+			var re = new RE2([ 'hello$' ]);
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof SyntaxError"));
+		}
+
+		try {
+			var re = new RE2([ '\\[^hello\\]' ]);
+			t.test(false); // shouldn't be here
+		} catch(e) {
+			eval(t.TEST("e instanceof SyntaxError"));
+		}
+
+		var re = new RE2([ '[^hello]' ]);
+		eval(t.TEST("re.source === '[^hello]'"));
 	}
 ]);
 
 
-// utilitites
+// utilities
+
+function makeLowLevelIterator(records) {
+	var i = 0;
+
+	return {
+		next() {
+			if (i < records.length) {
+				return records[i++];
+			} else {
+				throw "past end";
+			}
+		},
+		[Symbol.iterator]() {
+			return this;
+		}
+	};
+}
 
 function compare(re1, re2, t) {
 	// compares regular expression objects
 	eval(t.TEST("re1.source === re2.source"));
+	eval(t.TEST("t.unify(re1.sources, re2.sources)"));
 	eval(t.TEST("re1.global === re2.global"));
 	eval(t.TEST("re1.ignoreCase === re2.ignoreCase"));
 	eval(t.TEST("re1.multiline  === re2.multiline"));

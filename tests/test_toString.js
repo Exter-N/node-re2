@@ -26,5 +26,6 @@ unit.add(module, [
 
 		eval(t.TEST("RE2('c', 'ug').toString() === '/c/gu'"));
 		eval(t.TEST("RE2('d', 'um').toString() === '/d/mu'"));
+		eval(t.TEST("RE2([ 'hello', 'world' ]).toString() === '/hello|world/u'"));
 	}
 ]);

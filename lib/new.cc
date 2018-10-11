@@ -1,5 +1,6 @@
 #include "./wrapped_re2.h"
 #include "./util.h"
+#include "./iterator.h"
 
 #include <memory>
 #include <string>
@@ -8,6 +9,7 @@
 
 
 using std::map;
+using std::move;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -122,10 +124,14 @@ static bool translateRegExp(const char* data, size_t size, vector<char>& buffer)
 	}
 
 	buffer.resize(0);
-	buffer.insert(buffer.end(), result.data(), result.data() + result.size());
+	buffer.insert(buffer.end(), result.begin(), result.end());
 	buffer.push_back('\0');
 
 	return true;
+}
+
+static bool translateRegExp(const string& str, vector<char>& buffer) {
+	return translateRegExp(str.data(), str.size(), buffer);
 }
 
 static string escapeRegExp(const char* data, size_t size) {
@@ -154,6 +160,33 @@ static string escapeRegExp(const char* data, size_t size) {
 	}
 
 	return result;
+}
+
+static bool isSafeToUseInSet(const string& source) {
+	const char* p = source.data();
+	const char* end = p + source.size();
+
+	while (p < end) {
+		switch (*p) {
+			case '\\':
+				p += 2;
+				break;
+			case '[':
+				++p;
+				if (p < end && *p == '^') { // Avoid false-positives on "[^"
+					++p;
+				}
+				break;
+			case '^':
+			case '$':
+				return false;
+			default:
+				++p;
+				break;
+		}
+	}
+
+	return true;
 }
 
 
@@ -198,7 +231,10 @@ NAN_METHOD(WrappedRE2::New) {
 	char*  data = NULL;
 	size_t size = 0;
 
+	bool useSet = false;
 	string source;
+	vector<string> sources;
+	vector<string> internalSources;
 	bool   global = false;
 	bool   ignoreCase = false;
 	bool   multiline = false;
@@ -261,25 +297,80 @@ NAN_METHOD(WrappedRE2::New) {
 		unicode    = bool(flags & RegExp::kUnicode);
 		sticky     = bool(flags & RegExp::kSticky);
 	} else if (info[0]->IsObject() && !info[0]->IsString()) {
-		WrappedRE2* re2 = NULL;
-		auto object = info[0]->ToObject();
-		if (!object.IsEmpty() && object->InternalFieldCount() > 0) {
-			re2 = Nan::ObjectWrap::Unwrap<WrappedRE2>(object);
-		}
-		if (re2) {
-			const string& pattern = re2->regexp.pattern();
-			size = pattern.size();
-			buffer.resize(size);
-			data = &buffer[0];
-			memcpy(data, pattern.data(), size);
-			needConversion = false;
+		v8::Local<v8::Object> object = info[0].As<Object>();
+		if (WrappedRE2::HasInstance(object)) {
+			WrappedRE2* re2 = Nan::ObjectWrap::Unwrap<WrappedRE2>(object);
+			if (re2->useSet) {
+				useSet = true;
+				sources = re2->sources;
+				internalSources.resize(0);
+				for (const unique_ptr<RE2>& regex: re2->regexps) {
+					internalSources.push_back(regex->pattern());
+				}
+				if (sources.size() != internalSources.size()) {
+					return Nan::ThrowError("Inconsistency in RE2 constructor : sources and internalSources have different sizes (with RE2 argument).");
+				}
+			} else {
+				const string& pattern = re2->regexp.pattern();
+				size = pattern.size();
+				buffer.resize(size);
+				data = &buffer[0];
+				memcpy(data, pattern.data(), size);
+				needConversion = false;
 
-			source     = re2->source;
+				source     = re2->source;
+			}
+
 			global     = re2->global;
 			ignoreCase = re2->ignoreCase;
 			multiline  = re2->multiline;
 			unicode    = true;
 			sticky     = re2->sticky;
+		} else if (isIterable(object)) {
+			useSet = true;
+			for (Local<Value> element: object) {
+				if (node::Buffer::HasInstance(element)) {
+					size = node::Buffer::Length(element);
+					data = node::Buffer::Data(element);
+					sources.push_back(escapeRegExp(data, size));
+					internalSources.push_back(translateRegExp(sources.back(), buffer) ? string(buffer.begin(), buffer.end() - 1) : sources.back());
+				} else if (element->IsRegExp()) {
+					const RegExp* re = RegExp::Cast(*element);
+
+					Local<String> t(re->GetSource());
+					buffer.resize(t->Utf8Length() + 1);
+					t->WriteUtf8(&buffer[0]);
+					size = buffer.size() - 1;
+					data = &buffer[0];
+					sources.push_back(escapeRegExp(data, size));
+					internalSources.push_back(translateRegExp(sources.back(), buffer) ? string(buffer.begin(), buffer.end() - 1) : sources.back());
+				} else if (element->IsObject() && !element->IsString()) {
+					auto objectElement = element.As<Object>();
+					if (WrappedRE2::HasInstance(objectElement)) {
+						WrappedRE2* re2 = Nan::ObjectWrap::Unwrap<WrappedRE2>(object);
+						sources.push_back(re2->source);
+						internalSources.push_back(re2->regexp.pattern());
+					} else {
+						return Nan::ThrowTypeError("Expected string, Buffer, RegExp, RE2, or non-empty iterable thereof as the 1st argument.");
+					}
+				} else if (element->IsString()) {
+					Local<String> t(element->ToString());
+					buffer.resize(t->Utf8Length() + 1);
+					t->WriteUtf8(&buffer[0]);
+					size = buffer.size() - 1;
+					data = &buffer[0];
+					sources.push_back(escapeRegExp(data, size));
+					internalSources.push_back(translateRegExp(sources.back(), buffer) ? string(buffer.begin(), buffer.end() - 1) : sources.back());
+				} else {
+					return Nan::ThrowTypeError("Expected string, Buffer, RegExp, RE2, or non-empty iterable thereof as the 1st argument.");
+				}
+			}
+			if (ESIterator::failed()) {
+				return;
+			}
+			if (sources.size() != internalSources.size()) {
+				return Nan::ThrowError("Inconsistency in RE2 constructor : sources and internalSources have different sizes (with iterable argument).");
+			}
 		}
 	} else if (info[0]->IsString()) {
 		Local<String> t(info[0]->ToString());
@@ -290,8 +381,8 @@ NAN_METHOD(WrappedRE2::New) {
 		source = escapeRegExp(data, size);
 	}
 
-	if (!data) {
-		return Nan::ThrowTypeError("Expected string, Buffer, RegExp, or RE2 as the 1st argument.");
+	if (useSet ? sources.empty() : !data) {
+		return Nan::ThrowTypeError("Expected string, Buffer, RegExp, RE2, or non-empty iterable thereof as the 1st argument.");
 	}
 
 	if (!unicode) {
@@ -312,7 +403,21 @@ NAN_METHOD(WrappedRE2::New) {
 		}
 	}
 
-	if (needConversion && translateRegExp(data, size, buffer)) {
+	if (useSet) {
+		source.resize(0);
+		for (string pattern: sources) {
+			source += pattern;
+			source.push_back('|');
+		}
+		source.pop_back();
+		buffer.resize(0);
+		for (string pattern: internalSources) {
+			buffer.insert(buffer.end(), pattern.begin(), pattern.end());
+			buffer.push_back('|');
+		}
+		size = buffer.size() - 1;
+		data = &buffer[0];
+	} else if (needConversion && translateRegExp(data, size, buffer)) {
 		size = buffer.size() - 1;
 		data = &buffer[0];
 	}
@@ -324,12 +429,60 @@ NAN_METHOD(WrappedRE2::New) {
 	options.set_one_line(!multiline);
 	options.set_log_errors(false); // inappropriate when embedding
 
-	unique_ptr<WrappedRE2> re2(new WrappedRE2(StringPiece(data, size), options, source, global, ignoreCase, multiline, sticky));
-	if (!re2->regexp.ok()) {
-		return Nan::ThrowSyntaxError(re2->regexp.error().c_str());
-	}
-	if (!ensureUniqueNamedGroups(re2->regexp.CapturingGroupNames())) {
-		return Nan::ThrowSyntaxError("duplicate capture group name");
+	unique_ptr<WrappedRE2> re2(new WrappedRE2(useSet, StringPiece(data, size), options, source, global, ignoreCase, multiline, sticky));
+	if (useSet) {
+		re2->sources = move(sources);
+		for (string source: internalSources) {
+			if (!isSafeToUseInSet(source)) {
+				string prefixedError;
+				prefixedError.resize(50 + sizeof(re2->regexps.size()) * 3);
+				prefixedError.resize(snprintf(
+					&prefixedError[0], prefixedError.size(),
+					"[%lu] operators ^ and $ are not safe to use in a set",
+					re2->regexps.size()));
+
+				return Nan::ThrowSyntaxError(Nan::New(prefixedError).ToLocalChecked());
+			}
+			unique_ptr<RE2> regex(new RE2(StringPiece(source.data(), source.size()), options));
+			if (!regex->ok()) {
+				string error = regex->error();
+				string prefixedError;
+				prefixedError.resize(4 + sizeof(re2->regexps.size()) * 3 + error.size());
+				prefixedError.resize(snprintf(
+					&prefixedError[0], prefixedError.size(),
+					"[%lu] %s",
+					re2->regexps.size(), error.data()));
+
+				return Nan::ThrowSyntaxError(Nan::New(prefixedError).ToLocalChecked());
+			}
+			if (!ensureUniqueNamedGroups(regex->CapturingGroupNames())) {
+				string prefixedError;
+				prefixedError.resize(32 + sizeof(re2->regexps.size()) * 3);
+				prefixedError.resize(snprintf(
+					&prefixedError[0], prefixedError.size(),
+					"[%lu] duplicate capture group name",
+					re2->regexps.size()));
+
+				return Nan::ThrowSyntaxError(Nan::New(prefixedError).ToLocalChecked());
+			}
+			re2->regexps.push_back(move(regex));
+			if (re2->set.Add(StringPiece(source.data(), source.size()), nullptr) == -1) {
+				return Nan::ThrowError("Inconsistency in RE2 constructor : regex looks valid but is rejected by set.");
+			}
+		}
+		if (!re2->regexp.ok()) {
+			return Nan::ThrowError("Inconsistency in RE2 constructor : individual regexes look valid but piped regex doesn't.");
+		}
+		if (!re2->set.Compile()) {
+			return Nan::ThrowError("RE2::Set ran out of memory.");
+		}
+	} else {
+		if (!re2->regexp.ok()) {
+			return Nan::ThrowSyntaxError(re2->regexp.error().data());
+		}
+		if (!ensureUniqueNamedGroups(re2->regexp.CapturingGroupNames())) {
+			return Nan::ThrowSyntaxError("duplicate capture group name");
+		}
 	}
 	re2->Wrap(info.This());
 	re2.release();

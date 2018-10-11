@@ -229,5 +229,28 @@ unit.add(module, [
 
 		eval(t.TEST("re2.replace('ABCDEFABCDEF', '!') === '!!!!!FABCDEF'"));
 		eval(t.TEST("re2.lastIndex === 0"));
+	},
+
+	// RE2-Set tests
+
+	function test_replaceSetConvert(t) {
+		"use strict";
+
+		var re = new RE2([
+			`hello`,
+			`hi`,
+			`(\\d+(?:\\.\\d*)?)c`,
+			`(\\d+(?:\\.\\d*)?)f`
+		], 'gi');
+
+		var replacers = [
+			'hi',
+			'hello',
+			(_, tempC) => (tempC * 9/5 + 32) + 'f',
+			(_, tempF) => ((tempF - 32) * 5/9) + 'c',
+		];
+
+		eval(t.TEST("re.replace('hello people, local temp is 25c', replacers) === 'hi people, local temp is 77f'"));
+		eval(t.TEST("re.replace('hi people, local temp is 77f', replacers) === 'hello people, local temp is 25c'"));
 	}
 ]);

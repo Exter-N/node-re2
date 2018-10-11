@@ -59,7 +59,8 @@ NAN_METHOD(WrappedRE2::Exec) {
 
 	// actual work
 
-	vector<StringPiece> groups(re2->regexp.NumberOfCapturingGroups() + 1);
+	int patternIndex = 0;
+	vector<StringPiece> groups(re2->useSet ? 1 : (re2->regexp.NumberOfCapturingGroups() + 1));
 
 	if (!re2->regexp.Match(str, lastIndex, str.size, re2->sticky ? RE2::ANCHOR_START : RE2::UNANCHORED, &groups[0], groups.size())) {
 		if (re2->global || re2->sticky) {
@@ -67,6 +68,21 @@ NAN_METHOD(WrappedRE2::Exec) {
 		}
 		info.GetReturnValue().SetNull();
 		return;
+	}
+
+	if (re2->useSet) {
+		vector<int> patterns;
+		if (!re2->set.Match(groups[0], &patterns)) {
+			return Nan::ThrowError("Inconsistency in RE2.exec : piped regex finds a match but set doesn't agree.");
+		}
+		if (patterns.empty()) {
+			return Nan::ThrowError("Inconsistency in RE2.exec : match found but the set didn't tell for which pattern.");
+		}
+		patternIndex = patterns[0];
+		groups.resize(re2->regexps[patternIndex]->NumberOfCapturingGroups() + 1);
+		if (!re2->regexps[patternIndex]->Match(str, groups[0].data() - str.data, (groups[0].data() - str.data) + groups[0].size(), RE2::ANCHOR_BOTH, &groups[0], groups.size())) {
+			return Nan::ThrowError("Inconsistency in RE2.exec : set finds a match but designated regex doesn't agree.");
+		}
 	}
 
 	// form a result
@@ -97,7 +113,7 @@ NAN_METHOD(WrappedRE2::Exec) {
 
 	Nan::Set(result, Nan::New("input").ToLocalChecked(), info[0]);
 
-	const map<int, string>& groupNames = re2->regexp.CapturingGroupNames();
+	const map<int, string>& groupNames = re2->useSet ? re2->regexps[patternIndex]->CapturingGroupNames() : re2->regexp.CapturingGroupNames();
 	if (!groupNames.empty()) {
 		Local<Object> groups = Nan::New<Object>();
 		auto ignore(groups->SetPrototype(v8::Isolate::GetCurrent()->GetCurrentContext(), Nan::Null()));
@@ -112,6 +128,10 @@ NAN_METHOD(WrappedRE2::Exec) {
 		Nan::Set(result, Nan::New("groups").ToLocalChecked(), groups);
 	} else {
 		Nan::Set(result, Nan::New("groups").ToLocalChecked(), Nan::Undefined());
+	}
+
+	if (re2->useSet) {
+		Nan::Set(result, Nan::New("patternIndex").ToLocalChecked(), Nan::New(patternIndex));
 	}
 
 	if (re2->global || re2->sticky) {

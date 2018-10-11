@@ -1,12 +1,15 @@
 #include "./wrapped_re2.h"
 
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
+using v8::Array;
 using v8::Local;
 using v8::String;
 
@@ -21,6 +24,25 @@ NAN_GETTER(WrappedRE2::GetSource) {
 	info.GetReturnValue().Set(Nan::New(re2->source).ToLocalChecked());
 }
 
+NAN_GETTER(WrappedRE2::GetSources) {
+	if (!WrappedRE2::HasInstance(info.This())) {
+		info.GetReturnValue().SetUndefined();
+		return;
+	}
+
+	WrappedRE2* re2 = Nan::ObjectWrap::Unwrap<WrappedRE2>(info.This());
+	if (!re2->useSet) {
+		info.GetReturnValue().SetUndefined();
+		return;
+	}
+	Local<Array> sources = Nan::New<Array>();
+	size_t i = 0;
+	for (string source: re2->sources) {
+		Nan::Set(sources, i++, Nan::New(source).ToLocalChecked());
+	}
+	info.GetReturnValue().Set(sources);
+}
+
 NAN_GETTER(WrappedRE2::GetInternalSource) {
 	if (!WrappedRE2::HasInstance(info.This())) {
 		info.GetReturnValue().Set(Nan::New("(?:)").ToLocalChecked());
@@ -29,6 +51,25 @@ NAN_GETTER(WrappedRE2::GetInternalSource) {
 
 	WrappedRE2* re2 = Nan::ObjectWrap::Unwrap<WrappedRE2>(info.This());
 	info.GetReturnValue().Set(Nan::New(re2->regexp.pattern()).ToLocalChecked());
+}
+
+NAN_GETTER(WrappedRE2::GetInternalSources) {
+	if (!WrappedRE2::HasInstance(info.This())) {
+		info.GetReturnValue().SetUndefined();
+		return;
+	}
+
+	WrappedRE2* re2 = Nan::ObjectWrap::Unwrap<WrappedRE2>(info.This());
+	if (!re2->useSet) {
+		info.GetReturnValue().SetUndefined();
+		return;
+	}
+	Local<Array> sources = Nan::New<Array>();
+	size_t i = 0;
+	for (const unique_ptr<RE2>& regex: re2->regexps) {
+		Nan::Set(sources, i++, Nan::New(regex->pattern()).ToLocalChecked());
+	}
+	info.GetReturnValue().Set(sources);
 }
 
 NAN_GETTER(WrappedRE2::GetFlags) {

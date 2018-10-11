@@ -155,6 +155,42 @@ RE2("б").replace("абв", bufReplacer);
 This feature works for string and buffer inputs. If a buffer was used as an input, its output will be returned as
 a buffer too, otherwise a string will be returned.
 
+### Simultaneous matching of multiple patterns
+
+The `RE2` constructor supports passing an array (or, more generally, any iterable object) of patterns as the first argument.
+Most methods and properties of the resulting object will work as if you passed in a single piped pattern, for example :
+
+```js
+var pipedRe = RE2("(a)|(b)", "u");
+var reSet = RE2(["(a)", "(b)"], "u");
+
+pipedRe.source; reSet.source; // Both are "(a)|(b)"
+"0123456789abcdef".search(pipedRe); "0123456789abcdef".search(reSet); // Both are 10
+// And so on
+```
+
+The differences are :
+* `exec` only captures the groups of the individual pattern that matched ;
+* `exec` adds a `patternIndex` property to the returned array, telling which pattern matched ;
+* The previous two points also apply to `match` in non-global mode ;
+* `replace` accepts an array (or any iterable) of replacements, each replacement corresponding to a pattern ;
+* A new `sources` property allows to retrieve the individual patterns.
+
+```js
+pipedRe.exec("fedcba"); // ["b", <1 empty item>, "b", index: 4, input: "fedcba", groups: undefined]
+reSet.exec("fedcba"); // ["b", "b", index: 4, input: "fedcba", groups: undefined, patternIndex: 1]
+
+"fedcba".replace(reSet, ["x", "y"]); // "fedcya"
+"fedcba".replace(RE2(["(a)", "(b)"], "gu"), ["x", "y"]); // "fedcyx"
+
+pipedRe.sources; // undefined
+reSet.sources; // ["(a)", "(b)"]
+```
+
+**Caveat** : There is an additional limitation in this mode, namely, you can't use the anchor operators (`^` and `$`).
+As a workaround for the former, you can use the `sticky` mode. As a workaround for the latter, you can check the index and
+length of the match against the length of the input.
+
 ### Calculate length
 
 Two functions to calculate string sizes between
@@ -172,6 +208,8 @@ a default string.
 ### Property: `internalSource`
 
 Starting 1.8.0 property `source` emulates the same property of `RegExp`, meaning that it can be used to create an identical `RE2` or `RegExp` instance. Sometimes, for troubleshooting purposes, a user wants to inspect a `RE2` translated source. It is available as a read-only property called `internalSource`.
+
+If you have instantiated a `RE2` with an array of patterns, you can also access the individual translated patterns through another property named `internalSources`.
 
 ### Unicode warning level
 

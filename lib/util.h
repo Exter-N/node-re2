@@ -19,7 +19,7 @@ struct StrVal {
 };
 
 
-void consoleCall(const v8::Local<v8::String>& methodName, Local<v8::Value> text);
+void consoleCall(const char* methodName, Local<v8::Value> text);
 void printDeprecationWarning(const char* warning);
 
 

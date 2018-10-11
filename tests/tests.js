@@ -18,4 +18,8 @@ require("./test_prototype");
 require("./test_new");
 require("./test_groups");
 
+if ('yes' === process.env.NODE_RE2_TEST_PERFORMANCE) {
+    require("./test_performance");
+}
+
 unit.run();

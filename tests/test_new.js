@@ -48,7 +48,7 @@ unit.add(module, [
 		RE2.unicodeWarningLevel = "nothing";
 		console.error = consoleError;
 	},
-	function test_newUnicodeWarn(t) {
+	function test_newUnicodeThrow(t) {
 		"use strict";
 
 		RE2.unicodeWarningLevel = "throw";

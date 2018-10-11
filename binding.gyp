@@ -3,17 +3,18 @@
     {
       "target_name": "re2",
       "sources": [
+        "lib/accessors.cc",
         "lib/addon.cc",
-        "lib/new.cc",
         "lib/console.cc",
         "lib/exec.cc",
-        "lib/test.cc",
+        "lib/iterator.cc",
         "lib/match.cc",
+        "lib/new.cc",
         "lib/replace.cc",
         "lib/search.cc",
         "lib/split.cc",
+        "lib/test.cc",
         "lib/to_string.cc",
-        "lib/accessors.cc",
         "lib/util.cc",
         "vendor/re2/bitstate.cc",
         "vendor/re2/compile.cc",
@@ -40,7 +41,6 @@
         "vendor/util/strutil.cc"
       ],
       "cflags": [
-        "-std=c++11",
         "-Wall",
         "-Wextra",
         "-Wno-sign-compare",
@@ -48,6 +48,9 @@
         "-Wno-missing-field-initializers",
         "-O3",
         "-g"
+      ],
+      "cflags_cc": [
+        "-std=c++17"
       ],
       "defines": [
         "NDEBUG"
@@ -58,10 +61,10 @@
       ],
       "xcode_settings": {
         "MACOSX_DEPLOYMENT_TARGET": "10.7",
-        "CLANG_CXX_LANGUAGE_STANDARD": "c++11",
+        "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
         "CLANG_CXX_LIBRARY": "libc++",
         "OTHER_CFLAGS": [
-          "-std=c++11",
+          "-std=c++17",
           "-Wall",
           "-Wextra",
           "-Wno-sign-compare",

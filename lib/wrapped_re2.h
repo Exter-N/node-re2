@@ -6,8 +6,10 @@
 #include <nan.h>
 
 #include <re2/re2.h>
+#include <re2/set.h>
 
 #include <string>
+#include <vector>
 
 
 using v8::Function;
@@ -23,14 +25,16 @@ using re2::StringPiece;
 class WrappedRE2 : public Nan::ObjectWrap {
 
 	private:
-		WrappedRE2(const StringPiece& pattern, const RE2::Options& options, const std::string& s,
-			const bool& g, const bool& i, const bool& m, const bool& y) : regexp(pattern, options),
-				source(s), global(g), ignoreCase(i), multiline(m), sticky(y), lastIndex(0) {}
+		WrappedRE2(bool set, const StringPiece& pattern, const RE2::Options& options, const std::string& s,
+			const bool& g, const bool& i, const bool& m, const bool& y) : useSet(set),
+			    regexp(pattern, options), regexps(), set(options, RE2::ANCHOR_BOTH),
+				source(s), sources(), global(g), ignoreCase(i), multiline(m), sticky(y), lastIndex(0) {}
 
 		static NAN_METHOD(New);
 		static NAN_METHOD(ToString);
 
 		static NAN_GETTER(GetSource);
+		static NAN_GETTER(GetSources);
 		static NAN_GETTER(GetFlags);
 		static NAN_GETTER(GetGlobal);
 		static NAN_GETTER(GetIgnoreCase);
@@ -40,6 +44,7 @@ class WrappedRE2 : public Nan::ObjectWrap {
 		static NAN_GETTER(GetLastIndex);
 		static NAN_SETTER(SetLastIndex);
 		static NAN_GETTER(GetInternalSource);
+		static NAN_GETTER(GetInternalSources);
 
 		// RegExp methods
 		static NAN_METHOD(Exec);
@@ -69,13 +74,17 @@ class WrappedRE2 : public Nan::ObjectWrap {
 		static UnicodeWarningLevels unicodeWarningLevel;
 		static bool alreadyWarnedAboutUnicode;
 
-		RE2		    regexp;
-		std::string source;
-		bool	    global;
-		bool	    ignoreCase;
-		bool	    multiline;
-		bool	    sticky;
-		size_t	    lastIndex;
+		bool	                          useSet;
+		RE2		                          regexp;
+		std::vector<std::unique_ptr<RE2>> regexps;
+		RE2::Set                          set;
+		std::string                       source;
+		std::vector<std::string>          sources;
+		bool	                          global;
+		bool	                          ignoreCase;
+		bool	                          multiline;
+		bool	                          sticky;
+		size_t	                          lastIndex;
 };
 
 
